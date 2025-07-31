@@ -10,44 +10,29 @@ st.title("🔍 PE / Strategic Acquirer Summary Tool")
 
 # Inputs
 firm_name = st.text_input("Firm or Strategic Acquirer Name", placeholder="e.g., Thoma Bravo")
-firm_url = st.text_input("Firm Website (required for accurate scraping)", placeholder="e.g., https://www.thomabravo.com")
 employee_names = st.text_area("Optional Employee Names (one per line)", placeholder="Up to 5 names")
 investment_names = st.text_area("Optional Investment Names (one per line)", placeholder="Up to 5 investments")
 
-# Clean out nav/footer fluff
-def clean_text(text):
-    junk_phrases = ["accept cookies", "subscribe", "search", "privacy policy", "terms of use"]
-    lines = text.splitlines()
-    return "\n".join([line.strip() for line in lines if line and all(jp not in line.lower() for jp in junk_phrases)])
-
-# Scrape multiple pages using GET
-def scrape_pages(base_url, paths):
-    all_content = []
+# Scrape likely firm subpages and combine
+def scrape_combined_content(base_url, paths=["", "/about", "/team", "/portfolio", "/investments", "/our-team"]):
+    combined_text = ""
     for path in paths:
-        full_url = base_url.rstrip("/") + path
+        url = base_url + path
         try:
-            response = requests.get(full_url, timeout=10)
-            soup = BeautifulSoup(response.text, "html.parser")
-            text = soup.get_text(separator=" ", strip=True)
-            cleaned = clean_text(text)
-            if len(cleaned) > 300:
-                all_content.append(f"--- Content from {full_url} ---\n{cleaned[:3000]}")
-        except Exception:
-            continue
-    return "\n\n".join(all_content)
+            response = requests.get(url, timeout=10)
+            soup = BeautifulSoup(response.text, 'html.parser')
+            text = soup.get_text(separator=' ', strip=True)
+            combined_text += f"\n\n--- Content from {url} ---\n" + text[:3000]
+        except Exception as e:
+            combined_text += f"\n[Failed to fetch {url}: {e}]"
+    return combined_text[:12000]
 
-if st.button("Generate Summary") and firm_name and firm_url:
-    with st.spinner("Scraping firm site and generating summary..."):
-        paths = ["/", "/about", "/team", "/portfolio", "/investments", "/strategy", "/leadership"]
-        structured_text = scrape_pages(firm_url, paths)
+if st.button("Generate Summary") and firm_name:
+    with st.spinner("Scraping and generating summary..."):
+        base_url = f"https://www.{firm_name.lower().replace(' ', '')}.com"
+        website_content = scrape_combined_content(base_url)
 
-        if not structured_text.strip():
-            st.error("❌ No usable content was scraped from the website. Check the URL or try different subpages.")
-        else:
-            st.subheader("🔎 Scraped Website Preview")
-            st.text_area("Preview of Scraped Text (sent to GPT)", structured_text[:8000], height=300)
-
-            system_prompt = """
+        system_prompt = """
 You are a professional analyst assistant. When given the name of a private equity firm or strategic acquirer, generate:
 
 1. Location of headquarters
@@ -60,27 +45,29 @@ You are a professional analyst assistant. When given the name of a private equit
 
 Also include a confidence level (High, Medium, Low) for Location, Active Investments, AUM, and Fund info.
 
-Use only the clearly marked website content sections below. If a section isn't included, do not speculate. End with a "Sources" section listing URLs cited.
+Prioritize information from the firm's official website. If not available, reference PitchBook summaries or other reputable online sources.
+
+Finally, generate a "Sources" section at the end with footnotes pointing to the URLs of your data (e.g., [1] https://www.thomabravo.com/team).
 """
 
-            user_prompt = f"""Firm: {firm_name}
+        user_prompt = f"""Firm: {firm_name}
 Employees: {employee_names.strip()}
 Investments: {investment_names.strip()}
 
 Scraped Website Content:
-{structured_text}
+{website_content}
 
 Generate as specified.
 """
 
-            response = client.chat.completions.create(
-                model="gpt-4",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-                temperature=0.4
-            )
+        response = client.chat.completions.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.4
+        )
 
-            output = response.choices[0].message.content
-            st.text_area("📄 Output", output, height=700)
+        output = response.choices[0].message.content
+        st.text_area("📄 Output", output, height=700)
