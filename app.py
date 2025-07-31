@@ -37,7 +37,7 @@ Finally, generate a "Sources" section at the end with footnotes pointing to the 
         user_prompt = f"Firm: {firm_name}\nEmployees: {employee_names.strip()}\nInvestments: {investment_names.strip()}\nGenerate as specified."
 
         response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
