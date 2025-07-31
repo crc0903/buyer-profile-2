@@ -13,21 +13,24 @@ firm_name = st.text_input("Firm or Strategic Acquirer Name", placeholder="e.g., 
 employee_names = st.text_area("Optional Employee Names (one per line)", placeholder="Up to 5 names")
 investment_names = st.text_area("Optional Investment Names (one per line)", placeholder="Up to 5 investments")
 
-# Scraper utility
-def scrape_website_text(url):
-    try:
-        response = requests.get(url, timeout=10)
-        soup = BeautifulSoup(response.text, 'html.parser')
-        text = soup.get_text(separator=' ', strip=True)
-        return text[:4000]  # Limit to ~4000 characters to keep it efficient
-    except Exception as e:
-        return f"[Could not retrieve website content from {url}: {e}]"
+# Try scraping multiple likely subpages
+def scrape_combined_content(base_url, paths=["", "/about", "/team", "/portfolio", "/investments", "/our-team"]):
+    combined_text = ""
+    for path in paths:
+        url = base_url + path
+        try:
+            response = requests.get(url, timeout=10)
+            soup = BeautifulSoup(response.text, 'html.parser')
+            text = soup.get_text(separator=' ', strip=True)
+            combined_text += f"\n\n--- Content from {url} ---\n" + text[:3000]
+        except Exception as e:
+            combined_text += f"\n[Failed to fetch {url}: {e}]"
+    return combined_text[:12000]  # cap total input to fit GPT token limits
 
 if st.button("Generate Summary") and firm_name:
-    with st.spinner("Scraping and generating summary..."):
-        # Try to guess the firm's website
-        guessed_url = f"https://www.{firm_name.lower().replace(' ', '')}.com"
-        website_content = scrape_website_text(guessed_url)
+    with st.spinner("Scraping websites and generating summary..."):
+        base_url = f"https://www.{firm_name.lower().replace(' ', '')}.com"
+        website_content = scrape_combined_content(base_url)
 
         system_prompt = """
 You are a professional analyst assistant. When given the name of a private equity firm or strategic acquirer, generate:
@@ -42,9 +45,7 @@ You are a professional analyst assistant. When given the name of a private equit
 
 Also include a confidence level (High, Medium, Low) for Location, Active Investments, AUM, and Fund info.
 
-Prioritize information from the firm's official website (scraped content below). If not available, reference PitchBook summaries or other reputable online sources.
-
-Finally, generate a "Sources" section at the end with footnotes pointing to the URLs of your data (e.g., [1] https://www.thomabravo.com/team).
+Use the scraped content below as your primary source. If relevant data is missing, make an educated guess and clearly indicate low confidence. At the end, generate a "Sources" section with footnotes referencing each URL used.
 """
 
         user_prompt = f"""Firm: {firm_name}
